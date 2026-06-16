@@ -1,0 +1,40 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - pip install -r requirements.txt pytest --quiet
+  pre_build:
+    commands:
+      - echo Running unit tests...
+      - python -m pytest tests/ -v --tb=short
+      - echo Logging in to Amazon ECR...
+      - AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $REPOSITORY_URI
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
+  build:
+    commands:
+      - echo Build started on `date`
+      - docker build -t $REPOSITORY_URI:latest .
+      - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+  post_build:
+    commands:
+      - echo Pushing Docker images...
+      - docker push $REPOSITORY_URI:latest
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - echo Checking ECR scan findings (non-blocking)...
+      - sleep 10
+      - aws ecr describe-image-scan-findings --repository-name $IMAGE_REPO_NAME --image-id imageTag=$IMAGE_TAG --query 'imageScanFindings.findingSeverityCounts' 2>/dev/null || true
+      - echo Generating deployment artifacts...
+      - printf '{"ImageURI":"%s"}' "$REPOSITORY_URI:$IMAGE_TAG" > imageDetail.json
+      - sed -e "s|<EXECUTION_ROLE_ARN>|$TASK_EXECUTION_ROLE_ARN|g" -e "s|<TASK_ROLE_ARN>|$TASK_ROLE_ARN|g" -e "s|<AWS_REGION>|$AWS_DEFAULT_REGION|g" -e "s|<LOG_GROUP>|$LOG_GROUP_NAME|g" taskdef_template.json > taskdef.json
+
+artifacts:
+  files:
+    - imageDetail.json
+    - taskdef.json
+    - appspec.yaml
