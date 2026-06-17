@@ -1,0 +1,104 @@
+name: CI/CD — Test, Build, Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write   # required for OIDC token exchange
+  contents: read
+
+# These names must match var.app_name in Terraform (default: flask-pipeline)
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: flask-pipeline
+  ECS_CLUSTER: flask-pipeline
+  ECS_SERVICE: flask-pipeline
+  ECS_TASK_FAMILY: flask-pipeline
+  CONTAINER_NAME: flask-app
+  CODEDEPLOY_APP: flask-pipeline
+  CODEDEPLOY_GROUP: flask-pipeline-dg
+
+jobs:
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies and run tests
+        run: |
+          pip install -r requirements.txt pytest --quiet
+          python -m pytest tests/ -v --tb=short
+
+  build-and-deploy:
+    name: Build, Push & Deploy
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push Docker image
+        id: build
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag  $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $REGISTRY/$ECR_REPOSITORY:latest
+          docker push $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Report ECR scan findings (non-blocking)
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sleep 10
+          aws ecr describe-image-scan-findings \
+            --repository-name $ECR_REPOSITORY \
+            --image-id imageTag=$IMAGE_TAG \
+            --query 'imageScanFindings.findingSeverityCounts' \
+            2>/dev/null || true
+
+      - name: Fetch current ECS task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition $ECS_TASK_FAMILY \
+            --query taskDefinition \
+            > taskdef-current.json
+
+      - name: Render updated task definition (inject new image)
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: taskdef-current.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build.outputs.image }}
+
+      - name: Deploy to ECS via CodeDeploy (blue/green)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          codedeploy-appspec: appspec.yaml
+          codedeploy-application: ${{ env.CODEDEPLOY_APP }}
+          codedeploy-deployment-group: ${{ env.CODEDEPLOY_GROUP }}
