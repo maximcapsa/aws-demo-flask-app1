@@ -25,10 +25,9 @@ resource "aws_iam_role" "github_actions" {
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
-          StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:${var.github_owner}/${var.github_repo}:*"
-          }
+          # Scope trust to the deploy branch only (least privilege) rather than any ref
           StringEquals = {
+            "token.actions.githubusercontent.com:sub" = "repo:${var.github_owner}/${var.github_repo}:ref:refs/heads/${var.github_branch}"
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
         }
