@@ -1,6 +1,14 @@
+# Copy to terraform.tfvars and fill in your values (terraform.tfvars is git-ignored).
 aws_region    = "us-east-1"
 app_name      = "flask-pipeline"
-github_owner  = "staplatinumrqm"
-github_repo   = "aws-demo-ecr-build-image"
+github_owner  = "your-github-username"
+github_repo   = "your-repo-name"
 github_branch = "main"
 desired_count = 1
+
+# Observability: email to receive CloudWatch alarm notifications (leave "" to skip).
+alarm_email = ""
+
+# Autoscaling bounds for the ECS service.
+min_capacity = 1
+max_capacity = 4

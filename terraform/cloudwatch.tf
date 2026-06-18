@@ -14,5 +14,9 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
     LoadBalancer = aws_lb.main.arn_suffix
   }
 
+  # Notify on alarm/recovery in addition to driving CodeDeploy rollback.
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+
   tags = { Name = "${var.app_name}-5xx-alarm" }
 }

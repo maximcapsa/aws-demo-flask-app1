@@ -49,3 +49,21 @@ variable "desired_count" {
   type        = number
   default     = 1
 }
+
+variable "alarm_email" {
+  description = "Email address to receive CloudWatch alarm notifications via SNS. Leave empty to skip the subscription."
+  type        = string
+  default     = ""
+}
+
+variable "min_capacity" {
+  description = "Minimum number of ECS tasks (autoscaling floor)"
+  type        = number
+  default     = 1
+}
+
+variable "max_capacity" {
+  description = "Maximum number of ECS tasks (autoscaling ceiling — caps cost)"
+  type        = number
+  default     = 4
+}

@@ -1,0 +1,83 @@
+name: Terraform CI — Lint & Security
+
+# Static quality + security gates for infrastructure code.
+# Runs on every PR (and pushes to main) that touches terraform/.
+# No AWS credentials required — everything here is static analysis.
+on:
+  pull_request:
+    paths: ["terraform/**", ".github/workflows/terraform-ci.yml"]
+  push:
+    branches: [main]
+    paths: ["terraform/**"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: terraform
+
+jobs:
+  fmt-validate:
+    name: Format & Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: terraform fmt (check)
+        run: terraform fmt -check -recursive
+
+      # -backend=false skips S3 backend init so no AWS creds are needed
+      - name: terraform init (no backend)
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        run: terraform validate -no-color
+
+  tflint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Init TFLint plugins
+        run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run TFLint
+        run: tflint --recursive --format compact
+
+  trivy-iac:
+    name: Trivy IaC Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Informational: surface HIGH (and CRITICAL) findings in the log for triage.
+      # Does not block — some HIGH findings here are accepted (e.g. public HTTP on
+      # the ALB, intentional until HTTPS is added). Review these in the job output.
+      - name: Trivy IaC scan — report HIGH/CRITICAL (non-blocking)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: terraform
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      # Gate: block the merge on CRITICAL misconfigurations only.
+      - name: Trivy IaC scan — fail on CRITICAL
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: terraform
+          severity: CRITICAL
+          exit-code: "1"

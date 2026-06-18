@@ -27,3 +27,13 @@ output "github_actions_role_arn" {
   description = "IMPORTANT: add this value as the AWS_ROLE_ARN secret in your GitHub repo settings"
   value       = aws_iam_role.github_actions.arn
 }
+
+output "dashboard_url" {
+  description = "CloudWatch dashboard for ALB + ECS metrics"
+  value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards/dashboard/${aws_cloudwatch_dashboard.main.dashboard_name}"
+}
+
+output "alerts_topic_arn" {
+  description = "SNS topic that fans out CloudWatch alarm notifications"
+  value       = aws_sns_topic.alerts.arn
+}

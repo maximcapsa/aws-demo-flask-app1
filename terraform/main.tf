@@ -6,6 +6,14 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  backend "s3" {
+    bucket         = "flask-pipeline-tfstate-778900739472"
+    key            = "flask-pipeline/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "flask-pipeline-tfstate-lock"
+    encrypt        = true
+  }
 }
 
 provider "aws" {
