@@ -6,3 +6,9 @@
 # Environment-specific / sensitive values — use terraform.tfvars.example as the template
 terraform.tfvars
 *.auto.tfvars
+
+# Python
+__pycache__/
+*.pyc
+app.db
+.pytest_cache/
