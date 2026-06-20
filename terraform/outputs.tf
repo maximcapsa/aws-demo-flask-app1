@@ -57,3 +57,8 @@ output "avatar_bucket" {
   description = "S3 bucket storing profile pictures"
   value       = aws_s3_bucket.avatars.bucket
 }
+
+output "app_https_url" {
+  description = "Public HTTPS URL (CloudFront) — use this instead of the HTTP ALB"
+  value       = "https://${aws_cloudfront_distribution.app.domain_name}"
+}
